@@ -11,6 +11,7 @@ import { LoginPage } from '@/pages/auth/LoginPage';
 import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { EngagementsPage } from '@/pages/engagements/EngagementsPage';
 import { EngagementDetailPage } from '@/pages/engagements/EngagementDetailPage';
+import { TechniquesManagementPage } from '@/pages/engagements/TechniquesManagementPage';
 import { TechniquesPage } from '@/pages/techniques/TechniquesPage';
 import { FindingsPage } from '@/pages/findings/FindingsPage';
 import { ReportsPage } from '@/pages/reports/ReportsPage';
@@ -48,6 +49,7 @@ export function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/engagements" element={<EngagementsPage />} />
         <Route path="/engagements/:id" element={<EngagementDetailPage />} />
+        <Route path="/engagements/:id/techniques" element={<TechniquesManagementPage />} />
         <Route path="/techniques" element={<TechniquesPage />} />
         <Route path="/findings" element={<FindingsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
