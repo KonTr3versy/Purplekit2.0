@@ -25,16 +25,36 @@ PurpleKit bridges the gap between offensive and defensive security teams by:
   - Create/edit engagements with validation
   - Template cloning for reusable playbooks
   - Status workflow (Planning → Active → Complete → Archived)
+- **Techniques Management** - Complete API for ATT&CK techniques
+  - Add/remove techniques from engagements
+  - Bulk add up to 50 techniques at once
+  - Status tracking (Planned → Executing → Validating → Complete)
+  - Assignment and dependency management
+- **ATT&CK Integration** - Browse MITRE ATT&CK framework
+  - Search and filter by tactic, platform, ID or name
+  - View technique details with subtechniques
+  - Parent/child technique relationships
+- **Action Logging** - Red team execution tracking (API Complete)
+  - Log attack executions with command, target, and timestamps
+  - Evidence file tracking
+  - Automatic technique status updates
+- **Detection Validation** - Blue team validation (API Complete)
+  - Record detection outcomes (Logged, Alerted, Prevented, Not Logged)
+  - Link to defensive tools and data sources
+  - Alert priority and false positive tracking
+- **Findings** - Gap documentation (API Complete)
+  - People/Process/Technology (PPT) categorization
+  - Severity prioritization (Critical → Info)
+  - Remediation effort tracking
+  - Status workflow (Open → In Progress → Resolved)
 - **Multi-tenancy** - Organization-scoped data with RLS policies
 - **API Foundation** - RESTful API with OpenAPI spec
 - **Web Application** - React SPA with Vite and TailwindCSS
 
 ### 🚧 Coming Soon
-- **Techniques Management** - Add ATT&CK techniques to engagements
-- **Kanban Board** - Drag-and-drop workflow for technique execution
-- **Action Logging** - Red team execution tracking with evidence upload
-- **Detection Validation** - Blue team validation forms and outcomes
-- **Findings** - Gap documentation with PPT categorization
+- **Kanban Board UI** - Drag-and-drop workflow for technique execution
+- **Action/Validation UI** - Forms and detail views for execution tracking
+- **Findings UI** - Interface for gap documentation
 - **Analytics Dashboard** - Metrics, timing charts, and trends
 - **Heat Maps** - ATT&CK matrix visualization
 - **Report Generation** - Async PDF/HTML report generation
@@ -179,20 +199,22 @@ npm run docker:logs        # View logs
 
 ## 🏗️ Development Status
 
-### Phase 1: Core CRUD ✅
-- [x] Engagements API (GET, POST, PATCH, DELETE)
-- [x] Engagements UI (List, Detail, Create, Edit)
-- [ ] Techniques API
-- [ ] Techniques UI
+### Phase 1: Core CRUD ✅ COMPLETE
+- [x] **Engagements API** (GET, POST, PATCH, DELETE)
+- [x] **Engagements UI** (List, Detail, Create, Edit)
+- [x] **Techniques API** (GET, POST, PATCH, DELETE, Bulk Add)
+- [x] **Techniques UI** (Basic integration)
+- [x] **ATT&CK API** (Browse, Search, Filter techniques)
 
-### Phase 2: Workflow
+### Phase 2: Workflow ✅ APIs COMPLETE
+- [x] **Actions API** (Red team execution logging)
+- [x] **Validations API** (Blue team detection validation)
 - [ ] Kanban Board UI
-- [ ] Actions API
-- [ ] Validations API
 - [ ] Action/Validation UI
 
-### Phase 3: Insights
-- [ ] Findings API & UI
+### Phase 3: Insights - APIs COMPLETE
+- [x] **Findings API** (Gap documentation with PPT)
+- [ ] Findings UI
 - [ ] Analytics API
 - [ ] Heat Map UI
 
