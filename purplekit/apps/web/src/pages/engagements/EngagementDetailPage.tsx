@@ -399,11 +399,23 @@ export function EngagementDetailPage() {
             </div>
           </div>
 
-          {/* Techniques placeholder */}
+          {/* Techniques Section */}
           <div className="card p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Techniques</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Techniques</h2>
+              <button
+                onClick={() => navigate(`/engagements/${id}/techniques`)}
+                className="btn-primary text-sm"
+              >
+                Manage Techniques
+              </button>
+            </div>
             <p className="text-gray-500 text-center py-8">
-              Technique management coming soon...
+              Navigate to Techniques tab to add and manage ATT&CK techniques for this engagement.
+              <br />
+              <span className="text-sm">
+                (Full techniques management UI coming in next update)
+              </span>
             </p>
           </div>
         </div>
