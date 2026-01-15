@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11pt; line-height: 1.6; color: #1f2937; }
+    .container { padding: 20px; }
+
+    /* Cover Page */
+    .cover { text-align: center; padding: 100px 0; }
+    .cover h1 { font-size: 32pt; color: #7c3aed; margin-bottom: 20px; }
+    .cover h2 { font-size: 20pt; color: #4b5563; margin-bottom: 40px; }
+    .cover .meta { font-size: 12pt; color: #6b7280; margin-top: 20px; }
+
+    /* Headers */
+    h1 { font-size: 24pt; color: #7c3aed; margin: 30px 0 15px; page-break-after: avoid; }
+    h2 { font-size: 18pt; color: #1f2937; margin: 25px 0 12px; page-break-after: avoid; }
+    h3 { font-size: 14pt; color: #374151; margin: 20px 0 10px; page-break-after: avoid; }
+
+    /* Stats Grid */
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }
+    .stat-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; background: #f9fafb; }
+    .stat-card .label { font-size: 10pt; color: #6b7280; margin-bottom: 5px; }
+    .stat-card .value { font-size: 24pt; font-weight: bold; color: #7c3aed; }
+    .stat-card .subtext { font-size: 9pt; color: #9ca3af; margin-top: 5px; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; margin: 15px 0; page-break-inside: avoid; }
+    th { background: #7c3aed; color: white; padding: 10px; text-align: left; font-size: 10pt; }
+    td { padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 10pt; }
+    tr:nth-child(even) { background: #f9fafb; }
+
+    /* Severity badges */
+    .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 9pt; font-weight: 600; }
+    .badge-CRITICAL { background: #fee; color: #dc2626; }
+    .badge-HIGH { background: #ffedd5; color: #ea580c; }
+    .badge-MEDIUM { background: #fef9c3; color: #ca8a04; }
+    .badge-LOW { background: #dbeafe; color: #2563eb; }
+    .badge-INFO { background: #f3f4f6; color: #6b7280; }
+
+    /* Page breaks */
+    .page-break { page-break-after: always; }
+
+    /* Footer */
+    .footer { position: fixed; bottom: 20px; left: 20px; right: 20px; text-align: center; font-size: 9pt; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+
+    p { margin: 8px 0; }
+    strong { color: #374151; }
+  </style>
+</head>
+<body>
+  <!-- Cover Page -->
+  <div class="cover page-break">
+    <h1>Executive Summary Report</h1>
+    <h2>{{engagement.name}}</h2>
+    <div class="meta">
+      <p>Generated: {{formatDate now}}</p>
+      <p>Methodology: {{engagement.methodology}}</p>
+      <p>Status: {{engagement.status}}</p>
+    </div>
+  </div>
+
+  <!-- Engagement Overview -->
+  <div class="container">
+    <h1>Engagement Overview</h1>
+    {{#if engagement.description}}
+    <p><strong>Description:</strong> {{engagement.description}}</p>
+    {{/if}}
+    <p><strong>Created by:</strong> {{engagement.createdBy.displayName}} ({{engagement.createdBy.email}})</p>
+    {{#if engagement.startedAt}}
+    <p><strong>Started:</strong> {{formatDate engagement.startedAt}}</p>
+    {{/if}}
+    {{#if engagement.completedAt}}
+    <p><strong>Completed:</strong> {{formatDate engagement.completedAt}}</p>
+    {{/if}}
+
+    <h2>Key Metrics</h2>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">Total Techniques</div>
+        <div class="value">{{stats.totalTechniques}}</div>
+        <div class="subtext">{{round stats.completionPercent}}% complete</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Detection Rate</div>
+        <div class="value">{{round stats.detectionRate}}%</div>
+        <div class="subtext">{{stats.validatedActions}} of {{stats.totalActions}} validated</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Findings</div>
+        <div class="value">{{stats.totalFindings}}</div>
+        <div class="subtext">Security gaps identified</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Avg Time to Detect</div>
+        <div class="value">{{formatSeconds stats.avgTTD}}</div>
+        <div class="subtext">Response time</div>
+      </div>
+    </div>
+
+    <h2>Findings Distribution</h2>
+    <h3>By Severity</h3>
+    {{#if stats.findingsBySeverity}}
+    <table>
+      <thead>
+        <tr>
+          <th>Severity</th>
+          <th>Count</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each stats.findingsBySeverity}}
+        <tr>
+          <td>{{@key}}</td>
+          <td>{{this}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    {{else}}
+    <p>No findings recorded.</p>
+    {{/if}}
+
+    <h3>By Pillar (PPT Framework)</h3>
+    {{#if stats.findingsByPillar}}
+    <table>
+      <thead>
+        <tr>
+          <th>Pillar</th>
+          <th>Count</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each stats.findingsByPillar}}
+        <tr>
+          <td>{{@key}}</td>
+          <td>{{this}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    {{else}}
+    <p>No findings recorded.</p>
+    {{/if}}
+
+    {{#if (gt criticalFindings.length 0)}}
+    <div class="page-break"></div>
+    <h1>Critical Findings</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Severity</th>
+          <th>Pillar</th>
+          <th>Status</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each criticalFindings}}
+        <tr>
+          <td>{{this.title}}</td>
+          <td><span class="badge badge-{{this.severity}}">{{this.severity}}</span></td>
+          <td>{{this.pillar}}</td>
+          <td>{{this.status}}</td>
+          <td>{{formatDate this.createdAt}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    {{/if}}
+
+    {{#if (gt detectionsByTool.length 0)}}
+    <h1>Detection Coverage by Tool</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>Defensive Tool</th>
+          <th>Detections</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each detectionsByTool}}
+        <tr>
+          <td>{{this.toolName}}</td>
+          <td>{{this.detectionCount}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    {{/if}}
+  </div>
+
+  <div class="footer">
+    <p>PurpleKit - Purple Team Operations Platform | Confidential</p>
+  </div>
+</body>
+</html>
