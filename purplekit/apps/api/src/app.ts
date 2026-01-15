@@ -79,7 +79,7 @@ export function createApp(): Express {
   // Protected routes
   v1Router.use('/users', usersRouter);
   v1Router.use('/engagements', engagementsRouter);
-  v1Router.use('/techniques', techniquesRouter);
+  v1Router.use('/engagements/:engagementId/techniques', techniquesRouter);
   v1Router.use('/actions', actionsRouter);
   v1Router.use('/validations', validationsRouter);
   v1Router.use('/findings', findingsRouter);
