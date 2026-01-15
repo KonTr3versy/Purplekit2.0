@@ -1,0 +1,691 @@
+// =============================================================================
+// PurpleKit Database Schema - Prisma
+// =============================================================================
+// Purple Team Operations Management Platform
+// Version: 1.0.0
+// 
+// This schema implements:
+// - Multi-tenancy via org_id on all tenant tables
+// - Row-Level Security (RLS) policies defined in separate SQL file
+// - All entities from the architecture plan
+// - Proper indexes for query performance
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "multiSchema"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto]  // For gen_random_uuid()
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum UserRole {
+  ADMIN
+  RED_LEAD
+  BLUE_LEAD
+  ANALYST
+  OBSERVER
+}
+
+enum EngagementStatus {
+  PLANNING
+  ACTIVE
+  COMPLETE
+  ARCHIVED
+}
+
+enum Methodology {
+  ATOMIC     // Isolated technique tests, no dependencies
+  SCENARIO   // Attack chain with technique dependencies
+}
+
+enum VisibilityMode {
+  OPEN        // Both teams see all data
+  BLIND_BLUE  // Blue team cannot see planned techniques until executed
+  BLIND_RED   // Red team cannot see detection results
+}
+
+enum TechniqueStatus {
+  PLANNED
+  BLOCKED
+  EXECUTING
+  VALIDATING
+  COMPLETE
+}
+
+enum DependencyType {
+  REQUIRES_SUCCESS     // Prerequisite must succeed
+  REQUIRES_COMPLETION  // Prerequisite must complete (success or fail)
+}
+
+enum DetectionOutcome {
+  LOGGED       // Activity appeared in logs
+  ALERTED      // Alert was generated
+  PREVENTED    // Action was blocked
+  NOT_LOGGED   // No evidence in telemetry
+}
+
+enum AlertPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum FindingPillar {
+  PEOPLE      // Training, skills, capacity issues
+  PROCESS     // Playbooks, procedures, escalation
+  TECHNOLOGY  // Tools, configuration, telemetry
+}
+
+enum FindingCategory {
+  // Technology
+  TELEMETRY_GAP
+  DETECTION_GAP
+  PREVENTION_GAP
+  TOOL_MISCONFIGURATION
+  INTEGRATION_ISSUE
+  
+  // Process
+  MISSING_PLAYBOOK
+  PLAYBOOK_NOT_FOLLOWED
+  ESCALATION_FAILURE
+  COMMUNICATION_GAP
+  DOCUMENTATION_GAP
+  
+  // People
+  SKILLS_GAP
+  CAPACITY_ISSUE
+  AWARENESS_GAP
+}
+
+enum FindingSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum FindingStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  WONT_FIX
+  DEFERRED
+}
+
+enum ReportType {
+  TACTICAL     // Full technical detail for practitioners
+  OPERATIONAL  // Metrics summary for managers
+  STRATEGIC    // Executive summary for leadership
+  NAVIGATOR    // ATT&CK Navigator layer export
+}
+
+enum ReportStatus {
+  QUEUED
+  PROCESSING
+  COMPLETE
+  FAILED
+}
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  EXPORT
+  IMPORT
+  LOGIN
+  LOGOUT
+  INVITE
+  REVOKE
+}
+
+// =============================================================================
+// ORGANIZATION & USERS
+// =============================================================================
+
+/// Top-level tenant for multi-tenancy isolation
+model Organization {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String
+  slug             String           @unique  // URL-safe identifier
+  subscriptionTier SubscriptionTier @default(FREE) @map("subscription_tier")
+  settings         Json             @default("{}")  // Org-specific configuration
+  
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  
+  // Relations
+  users            User[]
+  engagements      Engagement[]
+  findings         Finding[]
+  featureFlags     FeatureFlag[]
+  auditLogs        AuditLog[]
+  reportJobs       ReportJob[]
+  productEvents    ProductEvent[]
+  apiKeys          ApiKey[]
+  defensiveTools   DefensiveTool[]
+  
+  @@map("organizations")
+}
+
+/// User accounts with role-based access
+model User {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId         String       @map("org_id") @db.Uuid
+  email         String
+  passwordHash  String       @map("password_hash")
+  displayName   String       @map("display_name")
+  role          UserRole     @default(ANALYST)
+  isActive      Boolean      @default(true) @map("is_active")
+  
+  lastLoginAt   DateTime?    @map("last_login_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  
+  // Relations
+  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  
+  createdEngagements    Engagement[]          @relation("EngagementCreatedBy")
+  assignedTechniques    EngagementTechnique[] @relation("TechniqueAssignedTo")
+  executedActions       Action[]              @relation("ActionExecutedBy")
+  validatedDetections   DetectionValidation[] @relation("DetectionValidatedBy")
+  createdFindings       Finding[]             @relation("FindingCreatedBy")
+  requestedReports      ReportJob[]           @relation("ReportRequestedBy")
+  auditLogs             AuditLog[]
+  productEvents         ProductEvent[]
+  sessions              Session[]
+  
+  @@unique([orgId, email])
+  @@index([orgId])
+  @@index([role])
+  @@map("users")
+}
+
+/// User sessions for JWT refresh tokens
+model Session {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  refreshToken String   @unique @map("refresh_token")
+  userAgent    String?  @map("user_agent")
+  ipAddress    String?  @map("ip_address")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// =============================================================================
+// ATT&CK REFERENCE DATA (Not tenant-specific)
+// =============================================================================
+
+/// Reference data from MITRE ATT&CK framework
+model AttackTechnique {
+  id              String   @id  // ATT&CK ID (e.g., T1059.001)
+  name            String
+  description     String   @db.Text
+  tactics         String[] // Array of tactic names
+  platforms       String[] // Windows, Linux, macOS, etc.
+  dataSources     String[] @map("data_sources")
+  isSubtechnique  Boolean  @default(false) @map("is_subtechnique")
+  parentId        String?  @map("parent_id")
+  mitreUrl        String   @map("mitre_url")
+  version         String   // ATT&CK version (e.g., 14.1)
+  deprecated      Boolean  @default(false)
+  
+  lastSyncedAt    DateTime @map("last_synced_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  // Self-relation for parent/child techniques
+  parent          AttackTechnique?  @relation("TechniqueHierarchy", fields: [parentId], references: [id])
+  subtechniques   AttackTechnique[] @relation("TechniqueHierarchy")
+  
+  // Relations to engagement techniques
+  engagementTechniques EngagementTechnique[]
+  
+  @@index([tactics])
+  @@index([platforms])
+  @@index([isSubtechnique])
+  @@index([deprecated])
+  @@map("attack_techniques")
+}
+
+// =============================================================================
+// ENGAGEMENTS
+// =============================================================================
+
+/// A purple team operation/exercise
+model Engagement {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId           String            @map("org_id") @db.Uuid
+  name            String
+  description     String?           @db.Text
+  methodology     Methodology
+  status          EngagementStatus  @default(PLANNING)
+  visibilityMode  VisibilityMode    @default(OPEN) @map("visibility_mode")
+  
+  // Template support
+  isTemplate      Boolean           @default(false) @map("is_template")
+  templateId      String?           @map("template_id") @db.Uuid
+  
+  startedAt       DateTime?         @map("started_at")
+  completedAt     DateTime?         @map("completed_at")
+  createdById     String            @map("created_by_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  
+  // Relations
+  organization    Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy       User              @relation("EngagementCreatedBy", fields: [createdById], references: [id])
+  template        Engagement?       @relation("EngagementTemplate", fields: [templateId], references: [id])
+  derivedFrom     Engagement[]      @relation("EngagementTemplate")
+  
+  techniques      EngagementTechnique[]
+  findings        Finding[]
+  reportJobs      ReportJob[]
+  
+  @@index([orgId])
+  @@index([status])
+  @@index([methodology])
+  @@index([createdAt])
+  @@index([isTemplate])
+  @@map("engagements")
+}
+
+/// ATT&CK techniques selected for an engagement
+model EngagementTechnique {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId         String          @map("org_id") @db.Uuid
+  engagementId  String          @map("engagement_id") @db.Uuid
+  techniqueId   String          @map("technique_id")  // ATT&CK ID
+  status        TechniqueStatus @default(PLANNED)
+  orderIndex    Int             @default(0) @map("order_index")  // For kanban ordering
+  notes         String?         @db.Text
+  assignedToId  String?         @map("assigned_to_id") @db.Uuid
+  
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  
+  // Relations
+  engagement    Engagement      @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  technique     AttackTechnique @relation(fields: [techniqueId], references: [id])
+  assignedTo    User?           @relation("TechniqueAssignedTo", fields: [assignedToId], references: [id])
+  
+  // Dependencies (for scenario mode)
+  dependsOn     TechniqueDependency[] @relation("DependentTechnique")
+  requiredBy    TechniqueDependency[] @relation("PrerequisiteTechnique")
+  
+  actions       Action[]
+  
+  @@unique([engagementId, techniqueId])
+  @@index([orgId])
+  @@index([engagementId])
+  @@index([status])
+  @@index([techniqueId])
+  @@map("engagement_techniques")
+}
+
+/// Prerequisites between techniques (scenario mode)
+model TechniqueDependency {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId           String         @map("org_id") @db.Uuid
+  techniqueId     String         @map("technique_id") @db.Uuid      // The dependent technique
+  prerequisiteId  String         @map("prerequisite_id") @db.Uuid   // The required technique
+  dependencyType  DependencyType @default(REQUIRES_COMPLETION) @map("dependency_type")
+  
+  createdAt       DateTime       @default(now()) @map("created_at")
+  
+  // Relations
+  technique       EngagementTechnique @relation("DependentTechnique", fields: [techniqueId], references: [id], onDelete: Cascade)
+  prerequisite    EngagementTechnique @relation("PrerequisiteTechnique", fields: [prerequisiteId], references: [id], onDelete: Cascade)
+  
+  @@unique([techniqueId, prerequisiteId])
+  @@index([orgId])
+  @@index([techniqueId])
+  @@index([prerequisiteId])
+  @@map("technique_dependencies")
+}
+
+// =============================================================================
+// ACTIONS & DETECTION VALIDATION
+// =============================================================================
+
+/// A logged execution of a technique (Red Team)
+model Action {
+  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId                 String              @map("org_id") @db.Uuid
+  engagementTechniqueId String              @map("engagement_technique_id") @db.Uuid
+  executedAt            DateTime            @map("executed_at")
+  executedById          String              @map("executed_by_id") @db.Uuid
+  
+  // Execution details
+  command               String?             @db.Text  // Command/procedure executed
+  targetHost            String?             @map("target_host")
+  targetUser            String?             @map("target_user")
+  notes                 String?             @db.Text
+  
+  // Evidence files stored in S3
+  evidenceFiles         Json                @default("[]") @map("evidence_files")  // Array of {key, filename, size, mimeType}
+  
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+  
+  // Relations
+  engagementTechnique   EngagementTechnique @relation(fields: [engagementTechniqueId], references: [id], onDelete: Cascade)
+  executedBy            User                @relation("ActionExecutedBy", fields: [executedById], references: [id])
+  
+  detectionValidation   DetectionValidation?
+  timingMetrics         TimingMetrics?
+  findings              Finding[]
+  
+  @@index([orgId])
+  @@index([engagementTechniqueId])
+  @@index([executedAt])
+  @@map("actions")
+}
+
+/// Blue team validation of detection for an action
+model DetectionValidation {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId           String            @map("org_id") @db.Uuid
+  actionId        String            @unique @map("action_id") @db.Uuid  // One-to-one with Action
+  
+  // Detection outcomes (can have multiple, e.g., LOGGED + ALERTED)
+  outcomes        DetectionOutcome[]
+  alertPriority   AlertPriority?    @map("alert_priority")
+  
+  // Detection details
+  defensiveToolId String?           @map("defensive_tool_id") @db.Uuid
+  detectionRuleId String?           @map("detection_rule_id")  // External rule ID
+  siemQuery       String?           @map("siem_query") @db.Text
+  alertId         String?           @map("alert_id")  // External alert reference
+  
+  // Evidence
+  evidenceFiles   Json              @default("[]") @map("evidence_files")
+  
+  validatedById   String            @map("validated_by_id") @db.Uuid
+  validatedAt     DateTime          @map("validated_at")
+  
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  
+  // Relations
+  action          Action            @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  validatedBy     User              @relation("DetectionValidatedBy", fields: [validatedById], references: [id])
+  defensiveTool   DefensiveTool?    @relation(fields: [defensiveToolId], references: [id])
+  
+  @@index([orgId])
+  @@index([outcomes])
+  @@map("detection_validations")
+}
+
+/// Response timing measurements for an action
+model TimingMetrics {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId                   String    @map("org_id") @db.Uuid
+  actionId                String    @unique @map("action_id") @db.Uuid  // One-to-one with Action
+  
+  // Timestamps (all in UTC)
+  detectionTimestamp      DateTime? @map("detection_timestamp")      // When alert fired
+  investigationStart      DateTime? @map("investigation_start")      // When analyst began triage
+  containmentTimestamp    DateTime? @map("containment_timestamp")    // When threat was isolated
+  remediationTimestamp    DateTime? @map("remediation_timestamp")    // When gap was closed
+  
+  // Calculated durations (in seconds, computed by application)
+  ttdSeconds              Int?      @map("ttd_seconds")  // Time to Detect
+  ttiSeconds              Int?      @map("tti_seconds")  // Time to Investigate
+  ttcSeconds              Int?      @map("ttc_seconds")  // Time to Contain
+  ttrSeconds              Int?      @map("ttr_seconds")  // Time to Remediate
+  
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  action                  Action    @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  
+  @@index([orgId])
+  @@map("timing_metrics")
+}
+
+/// Defensive tools tracked in the organization
+model DefensiveTool {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId       String       @map("org_id") @db.Uuid
+  name        String       // e.g., "CrowdStrike Falcon", "Splunk SIEM"
+  category    String       // e.g., "EDR", "SIEM", "NGFW", "NDR"
+  vendor      String?
+  version     String?
+  isActive    Boolean      @default(true) @map("is_active")
+  
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  
+  // Relations
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  detections   DetectionValidation[]
+  
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@map("defensive_tools")
+}
+
+// =============================================================================
+// FINDINGS
+// =============================================================================
+
+/// Documented gap or issue discovered during engagement
+model Finding {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId              String          @map("org_id") @db.Uuid
+  engagementId       String          @map("engagement_id") @db.Uuid
+  actionId           String?         @map("action_id") @db.Uuid  // Optional link to specific action
+  
+  title              String
+  description        String          @db.Text
+  pillar             FindingPillar
+  category           FindingCategory
+  severity           FindingSeverity
+  status             FindingStatus   @default(OPEN)
+  
+  // Remediation tracking
+  remediationNotes   String?         @map("remediation_notes") @db.Text
+  remediationOwner   String?         @map("remediation_owner")
+  remediationDue     DateTime?       @map("remediation_due")
+  resolvedAt         DateTime?       @map("resolved_at")
+  
+  // External tracking
+  externalTicketId   String?         @map("external_ticket_id")  // Jira, ServiceNow, etc.
+  externalTicketUrl  String?         @map("external_ticket_url")
+  
+  createdById        String          @map("created_by_id") @db.Uuid
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+  
+  // Relations
+  organization       Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  engagement         Engagement      @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  action             Action?         @relation(fields: [actionId], references: [id])
+  createdBy          User            @relation("FindingCreatedBy", fields: [createdById], references: [id])
+  
+  @@index([orgId])
+  @@index([engagementId])
+  @@index([pillar])
+  @@index([category])
+  @@index([severity])
+  @@index([status])
+  @@map("findings")
+}
+
+// =============================================================================
+// REPORTS
+// =============================================================================
+
+/// Async report generation queue
+model ReportJob {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId         String       @map("org_id") @db.Uuid
+  engagementId  String       @map("engagement_id") @db.Uuid
+  reportType    ReportType   @map("report_type")
+  format        String       @default("pdf")  // pdf, html, docx
+  status        ReportStatus @default(QUEUED)
+  progress      Int          @default(0)      // 0-100
+  
+  // Output
+  outputKey     String?      @map("output_key")  // S3 key when complete
+  outputUrl     String?      @map("output_url")  // Pre-signed URL (temporary)
+  fileSizeBytes Int?         @map("file_size_bytes")
+  
+  // Error handling
+  errorMessage  String?      @map("error_message") @db.Text
+  retryCount    Int          @default(0) @map("retry_count")
+  
+  requestedById String       @map("requested_by_id") @db.Uuid
+  requestedAt   DateTime     @default(now()) @map("requested_at")
+  startedAt     DateTime?    @map("started_at")
+  completedAt   DateTime?    @map("completed_at")
+  
+  // Relations
+  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  engagement    Engagement   @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  requestedBy   User         @relation("ReportRequestedBy", fields: [requestedById], references: [id])
+  
+  @@index([orgId])
+  @@index([engagementId])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("report_jobs")
+}
+
+// =============================================================================
+// FEATURE FLAGS
+// =============================================================================
+
+/// Feature flags for gradual rollouts and per-tenant features
+model FeatureFlag {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key       String    // Flag identifier (e.g., "enable_attack_chains")
+  orgId     String?   @map("org_id") @db.Uuid  // Null for global flags
+  enabled   Boolean   @default(false)
+  metadata  Json      @default("{}")  // Additional config (rollout %, etc.)
+  
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  organization Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  
+  @@unique([key, orgId])
+  @@index([key])
+  @@map("feature_flags")
+}
+
+// =============================================================================
+// AUDIT LOG
+// =============================================================================
+
+/// Immutable audit trail for compliance and debugging
+model AuditLog {
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId        String      @map("org_id") @db.Uuid
+  userId       String?     @map("user_id") @db.Uuid  // Null for system actions
+  
+  action       AuditAction
+  resourceType String      @map("resource_type")  // engagement, action, finding, etc.
+  resourceId   String?     @map("resource_id") @db.Uuid
+  
+  // Change details
+  changes      Json?       // Before/after for updates
+  metadata     Json?       // Additional context
+  
+  // Request context
+  ipAddress    String?     @map("ip_address")
+  userAgent    String?     @map("user_agent")
+  
+  timestamp    DateTime    @default(now())
+  
+  // Relations
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+  
+  @@index([orgId])
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+// =============================================================================
+// PRODUCT ANALYTICS
+// =============================================================================
+
+/// Analytics events for understanding product usage
+model ProductEvent {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  
+  eventType  String   @map("event_type")  // Feature used, page viewed, etc.
+  eventData  Json     @default("{}") @map("event_data")
+  sessionId  String?  @map("session_id")
+  
+  timestamp  DateTime @default(now())
+  
+  // Relations
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([orgId])
+  @@index([eventType])
+  @@index([timestamp])
+  @@map("product_events")
+}
+
+// =============================================================================
+// API KEYS
+// =============================================================================
+
+/// API keys for external integrations
+model ApiKey {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  name        String    // Human-readable name
+  keyHash     String    @unique @map("key_hash")  // Hashed API key
+  keyPrefix   String    @map("key_prefix")  // First 8 chars for identification
+  
+  permissions Json      @default("[]")  // Array of allowed scopes
+  
+  lastUsedAt  DateTime? @map("last_used_at")
+  expiresAt   DateTime? @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  
+  createdAt   DateTime  @default(now()) @map("created_at")
+  
+  // Relations
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  
+  @@index([orgId])
+  @@index([keyPrefix])
+  @@map("api_keys")
+}

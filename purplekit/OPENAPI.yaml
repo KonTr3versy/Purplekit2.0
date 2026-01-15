@@ -1,0 +1,2632 @@
+openapi: 3.1.0
+info:
+  title: PurpleKit API
+  description: |
+    Purple Team Operations Management Platform API
+    
+    ## Overview
+    PurpleKit helps security teams coordinate red team attacks with blue team detection validation,
+    track coverage against MITRE ATT&CK, and generate actionable reports.
+    
+    ## Authentication
+    All endpoints (except `/auth/*`) require a valid JWT token in the Authorization header:
+    ```
+    Authorization: Bearer <access_token>
+    ```
+    
+    ## Multi-Tenancy
+    All data is automatically scoped to the authenticated user's organization.
+    You cannot access data from other organizations.
+    
+    ## Rate Limiting
+    - Standard: 100 requests/minute
+    - Report generation: 10 requests/minute
+    - ATT&CK sync: 1 request/hour
+    
+    ## Pagination
+    List endpoints support cursor-based pagination:
+    - `limit`: Number of items (default: 20, max: 100)
+    - `cursor`: Cursor from previous response
+    
+  version: 1.0.0
+  contact:
+    name: PurpleKit Support
+    email: support@purplekit.io
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:3001/api/v1
+    description: Local development
+  - url: https://api.purplekit.io/v1
+    description: Production
+
+tags:
+  - name: Authentication
+    description: User authentication and session management
+  - name: Users
+    description: User management within organization
+  - name: Engagements
+    description: Purple team operations/exercises
+  - name: Techniques
+    description: ATT&CK techniques in engagements
+  - name: Actions
+    description: Red team execution logs
+  - name: Validations
+    description: Blue team detection validation
+  - name: Findings
+    description: Documented gaps and issues
+  - name: Reports
+    description: Report generation
+  - name: ATT&CK
+    description: MITRE ATT&CK reference data
+  - name: Analytics
+    description: Metrics and dashboards
+  - name: Settings
+    description: Organization and user settings
+  - name: Audit
+    description: Audit logs
+
+# ==============================================================================
+# SECURITY
+# ==============================================================================
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token
+
+  # ============================================================================
+  # SCHEMAS
+  # ============================================================================
+  schemas:
+    # --------------------------------------------------------------------------
+    # Common
+    # --------------------------------------------------------------------------
+    UUID:
+      type: string
+      format: uuid
+      example: "550e8400-e29b-41d4-a716-446655440000"
+
+    DateTime:
+      type: string
+      format: date-time
+      example: "2026-01-14T10:30:00Z"
+
+    PaginationMeta:
+      type: object
+      properties:
+        total:
+          type: integer
+          example: 150
+        limit:
+          type: integer
+          example: 20
+        cursor:
+          type: string
+          nullable: true
+          example: "eyJpZCI6IjEyMzQifQ=="
+        hasMore:
+          type: boolean
+          example: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+              example: "Invalid request parameters"
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+
+    # --------------------------------------------------------------------------
+    # Enums
+    # --------------------------------------------------------------------------
+    UserRole:
+      type: string
+      enum: [ADMIN, RED_LEAD, BLUE_LEAD, ANALYST, OBSERVER]
+
+    EngagementStatus:
+      type: string
+      enum: [PLANNING, ACTIVE, COMPLETE, ARCHIVED]
+
+    Methodology:
+      type: string
+      enum: [ATOMIC, SCENARIO]
+
+    VisibilityMode:
+      type: string
+      enum: [OPEN, BLIND_BLUE, BLIND_RED]
+
+    TechniqueStatus:
+      type: string
+      enum: [PLANNED, BLOCKED, EXECUTING, VALIDATING, COMPLETE]
+
+    DetectionOutcome:
+      type: string
+      enum: [LOGGED, ALERTED, PREVENTED, NOT_LOGGED]
+
+    AlertPriority:
+      type: string
+      enum: [CRITICAL, HIGH, MEDIUM, LOW, INFO]
+
+    FindingPillar:
+      type: string
+      enum: [PEOPLE, PROCESS, TECHNOLOGY]
+
+    FindingCategory:
+      type: string
+      enum:
+        - TELEMETRY_GAP
+        - DETECTION_GAP
+        - PREVENTION_GAP
+        - TOOL_MISCONFIGURATION
+        - INTEGRATION_ISSUE
+        - MISSING_PLAYBOOK
+        - PLAYBOOK_NOT_FOLLOWED
+        - ESCALATION_FAILURE
+        - COMMUNICATION_GAP
+        - DOCUMENTATION_GAP
+        - SKILLS_GAP
+        - CAPACITY_ISSUE
+        - AWARENESS_GAP
+
+    FindingSeverity:
+      type: string
+      enum: [CRITICAL, HIGH, MEDIUM, LOW, INFO]
+
+    FindingStatus:
+      type: string
+      enum: [OPEN, IN_PROGRESS, RESOLVED, WONT_FIX, DEFERRED]
+
+    ReportType:
+      type: string
+      enum: [TACTICAL, OPERATIONAL, STRATEGIC, NAVIGATOR]
+
+    ReportStatus:
+      type: string
+      enum: [QUEUED, PROCESSING, COMPLETE, FAILED]
+
+    # --------------------------------------------------------------------------
+    # Authentication
+    # --------------------------------------------------------------------------
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: "malcolm@acme.com"
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: "securepassword123"
+
+    LoginResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          description: JWT access token (expires in 15 minutes)
+        refreshToken:
+          type: string
+          description: Refresh token (expires in 7 days)
+        expiresIn:
+          type: integer
+          description: Access token TTL in seconds
+          example: 900
+        user:
+          $ref: '#/components/schemas/UserSummary'
+
+    RefreshRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+
+    # --------------------------------------------------------------------------
+    # Users
+    # --------------------------------------------------------------------------
+    UserSummary:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+
+    User:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+        isActive:
+          type: boolean
+        lastLoginAt:
+          $ref: '#/components/schemas/DateTime'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    CreateUserRequest:
+      type: object
+      required:
+        - email
+        - displayName
+        - role
+      properties:
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 100
+        role:
+          $ref: '#/components/schemas/UserRole'
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 100
+        role:
+          $ref: '#/components/schemas/UserRole'
+        isActive:
+          type: boolean
+
+    # --------------------------------------------------------------------------
+    # Organization
+    # --------------------------------------------------------------------------
+    Organization:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        name:
+          type: string
+        slug:
+          type: string
+        subscriptionTier:
+          type: string
+          enum: [FREE, PRO, ENTERPRISE]
+        settings:
+          type: object
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+
+    UpdateOrganizationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        settings:
+          type: object
+
+    # --------------------------------------------------------------------------
+    # ATT&CK Techniques
+    # --------------------------------------------------------------------------
+    AttackTechnique:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ATT&CK ID (e.g., T1059.001)
+          example: "T1059.001"
+        name:
+          type: string
+          example: "PowerShell"
+        description:
+          type: string
+        tactics:
+          type: array
+          items:
+            type: string
+          example: ["Execution"]
+        platforms:
+          type: array
+          items:
+            type: string
+          example: ["Windows"]
+        dataSources:
+          type: array
+          items:
+            type: string
+        isSubtechnique:
+          type: boolean
+        parentId:
+          type: string
+          nullable: true
+        mitreUrl:
+          type: string
+          format: uri
+        version:
+          type: string
+          example: "14.1"
+        deprecated:
+          type: boolean
+
+    AttackTechniqueList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttackTechnique'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # --------------------------------------------------------------------------
+    # Engagements
+    # --------------------------------------------------------------------------
+    EngagementSummary:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        name:
+          type: string
+        methodology:
+          $ref: '#/components/schemas/Methodology'
+        status:
+          $ref: '#/components/schemas/EngagementStatus'
+        techniqueCount:
+          type: integer
+        completionPercent:
+          type: number
+          format: float
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    Engagement:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        methodology:
+          $ref: '#/components/schemas/Methodology'
+        status:
+          $ref: '#/components/schemas/EngagementStatus'
+        visibilityMode:
+          $ref: '#/components/schemas/VisibilityMode'
+        isTemplate:
+          type: boolean
+        startedAt:
+          $ref: '#/components/schemas/DateTime'
+        completedAt:
+          $ref: '#/components/schemas/DateTime'
+        createdBy:
+          $ref: '#/components/schemas/UserSummary'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+        stats:
+          type: object
+          properties:
+            techniqueCount:
+              type: integer
+            completionPercent:
+              type: number
+            statusCounts:
+              type: object
+              additionalProperties:
+                type: integer
+
+    EngagementList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EngagementSummary'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    CreateEngagementRequest:
+      type: object
+      required:
+        - name
+        - methodology
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        methodology:
+          $ref: '#/components/schemas/Methodology'
+        visibilityMode:
+          $ref: '#/components/schemas/VisibilityMode'
+          default: OPEN
+        templateId:
+          $ref: '#/components/schemas/UUID'
+          description: Clone from existing engagement
+
+    UpdateEngagementRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        status:
+          $ref: '#/components/schemas/EngagementStatus'
+        visibilityMode:
+          $ref: '#/components/schemas/VisibilityMode'
+
+    # --------------------------------------------------------------------------
+    # Engagement Techniques
+    # --------------------------------------------------------------------------
+    EngagementTechnique:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        engagementId:
+          $ref: '#/components/schemas/UUID'
+        technique:
+          $ref: '#/components/schemas/AttackTechnique'
+        status:
+          $ref: '#/components/schemas/TechniqueStatus'
+        orderIndex:
+          type: integer
+        notes:
+          type: string
+          nullable: true
+        assignedTo:
+          $ref: '#/components/schemas/UserSummary'
+        dependencies:
+          type: array
+          items:
+            type: object
+            properties:
+              techniqueId:
+                $ref: '#/components/schemas/UUID'
+              dependencyType:
+                type: string
+                enum: [REQUIRES_SUCCESS, REQUIRES_COMPLETION]
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    EngagementTechniqueList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EngagementTechnique'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    AddTechniqueRequest:
+      type: object
+      required:
+        - techniqueId
+      properties:
+        techniqueId:
+          type: string
+          description: ATT&CK technique ID
+          example: "T1059.001"
+        notes:
+          type: string
+        assignedToId:
+          $ref: '#/components/schemas/UUID'
+        dependencies:
+          type: array
+          items:
+            type: object
+            properties:
+              prerequisiteId:
+                $ref: '#/components/schemas/UUID'
+              dependencyType:
+                type: string
+                enum: [REQUIRES_SUCCESS, REQUIRES_COMPLETION]
+
+    UpdateTechniqueRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/TechniqueStatus'
+        orderIndex:
+          type: integer
+        notes:
+          type: string
+        assignedToId:
+          $ref: '#/components/schemas/UUID'
+
+    BulkAddTechniquesRequest:
+      type: object
+      required:
+        - techniqueIds
+      properties:
+        techniqueIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 50
+          example: ["T1059.001", "T1059.003", "T1053.005"]
+
+    # --------------------------------------------------------------------------
+    # Actions
+    # --------------------------------------------------------------------------
+    Action:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        engagementTechniqueId:
+          $ref: '#/components/schemas/UUID'
+        technique:
+          $ref: '#/components/schemas/AttackTechnique'
+        executedAt:
+          $ref: '#/components/schemas/DateTime'
+        executedBy:
+          $ref: '#/components/schemas/UserSummary'
+        command:
+          type: string
+          nullable: true
+        targetHost:
+          type: string
+          nullable: true
+        targetUser:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        evidenceFiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceFile'
+        validation:
+          $ref: '#/components/schemas/DetectionValidation'
+        timingMetrics:
+          $ref: '#/components/schemas/TimingMetrics'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+
+    ActionList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    CreateActionRequest:
+      type: object
+      required:
+        - engagementTechniqueId
+        - executedAt
+      properties:
+        engagementTechniqueId:
+          $ref: '#/components/schemas/UUID'
+        executedAt:
+          $ref: '#/components/schemas/DateTime'
+        command:
+          type: string
+          maxLength: 10000
+        targetHost:
+          type: string
+          maxLength: 255
+        targetUser:
+          type: string
+          maxLength: 255
+        notes:
+          type: string
+          maxLength: 5000
+
+    UpdateActionRequest:
+      type: object
+      properties:
+        command:
+          type: string
+        targetHost:
+          type: string
+        targetUser:
+          type: string
+        notes:
+          type: string
+
+    EvidenceFile:
+      type: object
+      properties:
+        key:
+          type: string
+          description: S3 key
+        filename:
+          type: string
+        size:
+          type: integer
+        mimeType:
+          type: string
+        uploadUrl:
+          type: string
+          format: uri
+          description: Pre-signed URL for download
+
+    # --------------------------------------------------------------------------
+    # Detection Validations
+    # --------------------------------------------------------------------------
+    DetectionValidation:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        actionId:
+          $ref: '#/components/schemas/UUID'
+        outcomes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DetectionOutcome'
+        alertPriority:
+          $ref: '#/components/schemas/AlertPriority'
+        defensiveTool:
+          $ref: '#/components/schemas/DefensiveTool'
+        detectionRuleId:
+          type: string
+          nullable: true
+        siemQuery:
+          type: string
+          nullable: true
+        alertId:
+          type: string
+          nullable: true
+        evidenceFiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceFile'
+        validatedBy:
+          $ref: '#/components/schemas/UserSummary'
+        validatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    CreateValidationRequest:
+      type: object
+      required:
+        - actionId
+        - outcomes
+      properties:
+        actionId:
+          $ref: '#/components/schemas/UUID'
+        outcomes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DetectionOutcome'
+          minItems: 1
+        alertPriority:
+          $ref: '#/components/schemas/AlertPriority'
+        defensiveToolId:
+          $ref: '#/components/schemas/UUID'
+        detectionRuleId:
+          type: string
+          maxLength: 255
+        siemQuery:
+          type: string
+          maxLength: 5000
+        alertId:
+          type: string
+          maxLength: 255
+        timingMetrics:
+          $ref: '#/components/schemas/CreateTimingMetricsRequest'
+
+    UpdateValidationRequest:
+      type: object
+      properties:
+        outcomes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DetectionOutcome'
+        alertPriority:
+          $ref: '#/components/schemas/AlertPriority'
+        defensiveToolId:
+          $ref: '#/components/schemas/UUID'
+        detectionRuleId:
+          type: string
+        siemQuery:
+          type: string
+        alertId:
+          type: string
+
+    # --------------------------------------------------------------------------
+    # Timing Metrics
+    # --------------------------------------------------------------------------
+    TimingMetrics:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        actionId:
+          $ref: '#/components/schemas/UUID'
+        detectionTimestamp:
+          $ref: '#/components/schemas/DateTime'
+        investigationStart:
+          $ref: '#/components/schemas/DateTime'
+        containmentTimestamp:
+          $ref: '#/components/schemas/DateTime'
+        remediationTimestamp:
+          $ref: '#/components/schemas/DateTime'
+        ttdSeconds:
+          type: integer
+          nullable: true
+          description: Time to Detect (seconds)
+        ttiSeconds:
+          type: integer
+          nullable: true
+          description: Time to Investigate (seconds)
+        ttcSeconds:
+          type: integer
+          nullable: true
+          description: Time to Contain (seconds)
+        ttrSeconds:
+          type: integer
+          nullable: true
+          description: Time to Remediate (seconds)
+
+    CreateTimingMetricsRequest:
+      type: object
+      properties:
+        detectionTimestamp:
+          $ref: '#/components/schemas/DateTime'
+        investigationStart:
+          $ref: '#/components/schemas/DateTime'
+        containmentTimestamp:
+          $ref: '#/components/schemas/DateTime'
+        remediationTimestamp:
+          $ref: '#/components/schemas/DateTime'
+
+    # --------------------------------------------------------------------------
+    # Defensive Tools
+    # --------------------------------------------------------------------------
+    DefensiveTool:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        name:
+          type: string
+        category:
+          type: string
+        vendor:
+          type: string
+          nullable: true
+        version:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+
+    DefensiveToolList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DefensiveTool'
+
+    CreateDefensiveToolRequest:
+      type: object
+      required:
+        - name
+        - category
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        category:
+          type: string
+          minLength: 2
+          maxLength: 50
+        vendor:
+          type: string
+          maxLength: 100
+        version:
+          type: string
+          maxLength: 50
+
+    # --------------------------------------------------------------------------
+    # Findings
+    # --------------------------------------------------------------------------
+    Finding:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        engagementId:
+          $ref: '#/components/schemas/UUID'
+        actionId:
+          $ref: '#/components/schemas/UUID'
+        title:
+          type: string
+        description:
+          type: string
+        pillar:
+          $ref: '#/components/schemas/FindingPillar'
+        category:
+          $ref: '#/components/schemas/FindingCategory'
+        severity:
+          $ref: '#/components/schemas/FindingSeverity'
+        status:
+          $ref: '#/components/schemas/FindingStatus'
+        remediationNotes:
+          type: string
+          nullable: true
+        remediationOwner:
+          type: string
+          nullable: true
+        remediationDue:
+          $ref: '#/components/schemas/DateTime'
+        resolvedAt:
+          $ref: '#/components/schemas/DateTime'
+        externalTicketId:
+          type: string
+          nullable: true
+        externalTicketUrl:
+          type: string
+          nullable: true
+        createdBy:
+          $ref: '#/components/schemas/UserSummary'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    FindingList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Finding'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    CreateFindingRequest:
+      type: object
+      required:
+        - engagementId
+        - title
+        - description
+        - pillar
+        - category
+        - severity
+      properties:
+        engagementId:
+          $ref: '#/components/schemas/UUID'
+        actionId:
+          $ref: '#/components/schemas/UUID'
+        title:
+          type: string
+          minLength: 10
+          maxLength: 200
+        description:
+          type: string
+          minLength: 20
+          maxLength: 5000
+        pillar:
+          $ref: '#/components/schemas/FindingPillar'
+        category:
+          $ref: '#/components/schemas/FindingCategory'
+        severity:
+          $ref: '#/components/schemas/FindingSeverity'
+        remediationNotes:
+          type: string
+          maxLength: 5000
+        remediationOwner:
+          type: string
+          maxLength: 100
+        remediationDue:
+          $ref: '#/components/schemas/DateTime'
+        externalTicketId:
+          type: string
+          maxLength: 100
+        externalTicketUrl:
+          type: string
+          format: uri
+
+    UpdateFindingRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        pillar:
+          $ref: '#/components/schemas/FindingPillar'
+        category:
+          $ref: '#/components/schemas/FindingCategory'
+        severity:
+          $ref: '#/components/schemas/FindingSeverity'
+        status:
+          $ref: '#/components/schemas/FindingStatus'
+        remediationNotes:
+          type: string
+        remediationOwner:
+          type: string
+        remediationDue:
+          $ref: '#/components/schemas/DateTime'
+        externalTicketId:
+          type: string
+        externalTicketUrl:
+          type: string
+
+    # --------------------------------------------------------------------------
+    # Reports
+    # --------------------------------------------------------------------------
+    ReportJob:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        engagementId:
+          $ref: '#/components/schemas/UUID'
+        reportType:
+          $ref: '#/components/schemas/ReportType'
+        format:
+          type: string
+          enum: [pdf, html, docx, json]
+        status:
+          $ref: '#/components/schemas/ReportStatus'
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        outputUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: Pre-signed download URL (valid for 1 hour)
+        fileSizeBytes:
+          type: integer
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        requestedBy:
+          $ref: '#/components/schemas/UserSummary'
+        requestedAt:
+          $ref: '#/components/schemas/DateTime'
+        completedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    ReportJobList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportJob'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    CreateReportRequest:
+      type: object
+      required:
+        - engagementId
+        - reportType
+      properties:
+        engagementId:
+          $ref: '#/components/schemas/UUID'
+        reportType:
+          $ref: '#/components/schemas/ReportType'
+        format:
+          type: string
+          enum: [pdf, html, docx, json]
+          default: pdf
+        includeNavigatorLayer:
+          type: boolean
+          default: true
+
+    # --------------------------------------------------------------------------
+    # Analytics
+    # --------------------------------------------------------------------------
+    DashboardStats:
+      type: object
+      properties:
+        activeEngagements:
+          type: integer
+        techniquesTested:
+          type: integer
+        detectionRate:
+          type: number
+          format: float
+        avgTtdSeconds:
+          type: number
+          format: float
+        openFindings:
+          type: integer
+        findingsBySeverity:
+          type: object
+          additionalProperties:
+            type: integer
+        recentActivity:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityItem'
+
+    ActivityItem:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        type:
+          type: string
+          enum: [action_logged, validation_complete, finding_created, engagement_started, report_generated]
+        user:
+          $ref: '#/components/schemas/UserSummary'
+        description:
+          type: string
+        timestamp:
+          $ref: '#/components/schemas/DateTime'
+
+    TimingAnalytics:
+      type: object
+      properties:
+        period:
+          type: string
+          example: "2026-01"
+        metrics:
+          type: object
+          properties:
+            ttd:
+              $ref: '#/components/schemas/MetricSummary'
+            tti:
+              $ref: '#/components/schemas/MetricSummary'
+            ttc:
+              $ref: '#/components/schemas/MetricSummary'
+            ttr:
+              $ref: '#/components/schemas/MetricSummary'
+
+    MetricSummary:
+      type: object
+      properties:
+        mean:
+          type: number
+          format: float
+        median:
+          type: number
+          format: float
+        p95:
+          type: number
+          format: float
+        count:
+          type: integer
+        trend:
+          type: number
+          format: float
+          description: Percent change from previous period
+
+    CoverageAnalytics:
+      type: object
+      properties:
+        totalTechniques:
+          type: integer
+        testedTechniques:
+          type: integer
+        coverageByTactic:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              total:
+                type: integer
+              tested:
+                type: integer
+              detected:
+                type: integer
+        outcomeDistribution:
+          type: object
+          additionalProperties:
+            type: integer
+
+    ToolEffectiveness:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              tool:
+                $ref: '#/components/schemas/DefensiveTool'
+              detected:
+                type: integer
+              missed:
+                type: integer
+              detectionRate:
+                type: number
+                format: float
+
+    # --------------------------------------------------------------------------
+    # Heat Map / Navigator
+    # --------------------------------------------------------------------------
+    HeatMapData:
+      type: object
+      properties:
+        engagementId:
+          $ref: '#/components/schemas/UUID'
+        tactics:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              techniques:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    status:
+                      $ref: '#/components/schemas/TechniqueStatus'
+                    outcome:
+                      $ref: '#/components/schemas/DetectionOutcome'
+                    tested:
+                      type: boolean
+
+    NavigatorLayer:
+      type: object
+      description: ATT&CK Navigator JSON layer format
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        domain:
+          type: string
+        description:
+          type: string
+        techniques:
+          type: array
+          items:
+            type: object
+
+    # --------------------------------------------------------------------------
+    # Audit Logs
+    # --------------------------------------------------------------------------
+    AuditLog:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        action:
+          type: string
+          enum: [CREATE, READ, UPDATE, DELETE, EXPORT, IMPORT, LOGIN, LOGOUT, INVITE, REVOKE]
+        resourceType:
+          type: string
+        resourceId:
+          $ref: '#/components/schemas/UUID'
+        user:
+          $ref: '#/components/schemas/UserSummary'
+        changes:
+          type: object
+          nullable: true
+        ipAddress:
+          type: string
+          nullable: true
+        userAgent:
+          type: string
+          nullable: true
+        timestamp:
+          $ref: '#/components/schemas/DateTime'
+
+    AuditLogList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # --------------------------------------------------------------------------
+    # Feature Flags
+    # --------------------------------------------------------------------------
+    FeatureFlags:
+      type: object
+      additionalProperties:
+        type: boolean
+      example:
+        attack_chain_visualization: true
+        realtime_collaboration: true
+        advanced_analytics: false
+
+    # --------------------------------------------------------------------------
+    # Import/Export
+    # --------------------------------------------------------------------------
+    ImportRequest:
+      type: object
+      required:
+        - format
+        - engagementId
+      properties:
+        format:
+          type: string
+          enum: [csv, json, navigator, attire]
+        engagementId:
+          $ref: '#/components/schemas/UUID'
+        createEngagement:
+          type: boolean
+          default: false
+
+    ImportResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        imported:
+          type: integer
+        skipped:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              row:
+                type: integer
+              message:
+                type: string
+
+    ExportRequest:
+      type: object
+      required:
+        - engagementId
+        - format
+      properties:
+        engagementId:
+          $ref: '#/components/schemas/UUID'
+        format:
+          type: string
+          enum: [json, csv, navigator, attire]
+
+# ==============================================================================
+# PATHS
+# ==============================================================================
+paths:
+  # ----------------------------------------------------------------------------
+  # Authentication
+  # ----------------------------------------------------------------------------
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Login
+      description: Authenticate with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid or expired refresh token
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Logout
+      description: Invalidate refresh token
+      responses:
+        '204':
+          description: Logged out successfully
+
+  /auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get current user
+      responses:
+        '200':
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  # ----------------------------------------------------------------------------
+  # Users
+  # ----------------------------------------------------------------------------
+  /users:
+    get:
+      tags: [Users]
+      summary: List users
+      description: List all users in the organization
+      parameters:
+        - name: role
+          in: query
+          schema:
+            $ref: '#/components/schemas/UserRole'
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+    post:
+      tags: [Users]
+      summary: Invite user
+      description: Invite a new user to the organization (sends email)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User invited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '409':
+          description: Email already exists
+
+  /users/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/UUID'
+    get:
+      tags: [Users]
+      summary: Get user
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          description: User not found
+
+    patch:
+      tags: [Users]
+      summary: Update user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+    delete:
+      tags: [Users]
+      summary: Deactivate user
+      description: Soft-delete by setting isActive to false
+      responses:
+        '204':
+          description: User deactivated
+
+  # ----------------------------------------------------------------------------
+  # Organization
+  # ----------------------------------------------------------------------------
+  /organization:
+    get:
+      tags: [Settings]
+      summary: Get organization
+      responses:
+        '200':
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+
+    patch:
+      tags: [Settings]
+      summary: Update organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrganizationRequest'
+      responses:
+        '200':
+          description: Organization updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+
+  # ----------------------------------------------------------------------------
+  # ATT&CK Techniques
+  # ----------------------------------------------------------------------------
+  /attack/techniques:
+    get:
+      tags: [ATT&CK]
+      summary: List ATT&CK techniques
+      parameters:
+        - name: tactic
+          in: query
+          schema:
+            type: string
+          description: Filter by tactic name
+        - name: platform
+          in: query
+          schema:
+            type: string
+          description: Filter by platform
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by ID or name
+        - name: includeSubtechniques
+          in: query
+          schema:
+            type: boolean
+            default: true
+        - name: includeDeprecated
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of techniques
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttackTechniqueList'
+
+  /attack/techniques/{techniqueId}:
+    get:
+      tags: [ATT&CK]
+      summary: Get technique details
+      parameters:
+        - name: techniqueId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: T1059.001
+      responses:
+        '200':
+          description: Technique details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttackTechnique'
+        '404':
+          description: Technique not found
+
+  /attack/sync:
+    post:
+      tags: [ATT&CK]
+      summary: Sync ATT&CK data
+      description: Trigger sync with MITRE ATT&CK (rate limited to 1/hour)
+      responses:
+        '202':
+          description: Sync started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  lastSyncedAt:
+                    $ref: '#/components/schemas/DateTime'
+        '429':
+          description: Rate limited
+
+  # ----------------------------------------------------------------------------
+  # Engagements
+  # ----------------------------------------------------------------------------
+  /engagements:
+    get:
+      tags: [Engagements]
+      summary: List engagements
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/EngagementStatus'
+        - name: methodology
+          in: query
+          schema:
+            $ref: '#/components/schemas/Methodology'
+        - name: isTemplate
+          in: query
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of engagements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementList'
+
+    post:
+      tags: [Engagements]
+      summary: Create engagement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEngagementRequest'
+      responses:
+        '201':
+          description: Engagement created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Engagement'
+
+  /engagements/{engagementId}:
+    parameters:
+      - name: engagementId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/UUID'
+    get:
+      tags: [Engagements]
+      summary: Get engagement
+      responses:
+        '200':
+          description: Engagement details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Engagement'
+        '404':
+          description: Engagement not found
+
+    patch:
+      tags: [Engagements]
+      summary: Update engagement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEngagementRequest'
+      responses:
+        '200':
+          description: Engagement updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Engagement'
+
+    delete:
+      tags: [Engagements]
+      summary: Delete engagement
+      description: Archives the engagement (soft delete)
+      responses:
+        '204':
+          description: Engagement archived
+
+  /engagements/{engagementId}/clone:
+    post:
+      tags: [Engagements]
+      summary: Clone engagement
+      parameters:
+        - name: engagementId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: Engagement cloned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Engagement'
+
+  # ----------------------------------------------------------------------------
+  # Engagement Techniques
+  # ----------------------------------------------------------------------------
+  /engagements/{engagementId}/techniques:
+    parameters:
+      - name: engagementId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/UUID'
+    get:
+      tags: [Techniques]
+      summary: List engagement techniques
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/TechniqueStatus'
+        - name: assignedToId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: List of techniques in engagement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementTechniqueList'
+
+    post:
+      tags: [Techniques]
+      summary: Add technique to engagement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddTechniqueRequest'
+      responses:
+        '201':
+          description: Technique added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementTechnique'
+        '409':
+          description: Technique already in engagement
+
+  /engagements/{engagementId}/techniques/bulk:
+    post:
+      tags: [Techniques]
+      summary: Bulk add techniques
+      parameters:
+        - name: engagementId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkAddTechniquesRequest'
+      responses:
+        '201':
+          description: Techniques added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  added:
+                    type: integer
+                  skipped:
+                    type: integer
+                  techniques:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EngagementTechnique'
+
+  /engagements/{engagementId}/techniques/{techniqueId}:
+    parameters:
+      - name: engagementId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/UUID'
+      - name: techniqueId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/UUID'
+        description: EngagementTechnique ID (not ATT&CK ID)
+    get:
+      tags: [Techniques]
+      summary: Get engagement technique
+      responses:
+        '200':
+          description: Technique details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementTechnique'
+
+    patch:
+      tags: [Techniques]
+      summary: Update technique status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTechniqueRequest'
+      responses:
+        '200':
+          description: Technique updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementTechnique'
+
+    delete:
+      tags: [Techniques]
+      summary: Remove technique from engagement
+      responses:
+        '204':
+          description: Technique removed
+
+  # ----------------------------------------------------------------------------
+  # Actions
+  # ----------------------------------------------------------------------------
+  /actions:
+    get:
+      tags: [Actions]
+      summary: List actions
+      parameters:
+        - name: engagementId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: engagementTechniqueId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: executedById
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: from
+          in: query
+          schema:
+            $ref: '#/components/schemas/DateTime'
+        - name: to
+          in: query
+          schema:
+            $ref: '#/components/schemas/DateTime'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of actions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionList'
+
+    post:
+      tags: [Actions]
+      summary: Log action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateActionRequest'
+      responses:
+        '201':
+          description: Action logged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Action'
+
+  /actions/{actionId}:
+    parameters:
+      - name: actionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/UUID'
+    get:
+      tags: [Actions]
+      summary: Get action
+      responses:
+        '200':
+          description: Action details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Action'
+
+    patch:
+      tags: [Actions]
+      summary: Update action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateActionRequest'
+      responses:
+        '200':
+          description: Action updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Action'
+
+    delete:
+      tags: [Actions]
+      summary: Delete action
+      responses:
+        '204':
+          description: Action deleted
+
+  /actions/{actionId}/evidence:
+    post:
+      tags: [Actions]
+      summary: Upload evidence file
+      parameters:
+        - name: actionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceFile'
+
+  # ----------------------------------------------------------------------------
+  # Validations
+  # ----------------------------------------------------------------------------
+  /validations:
+    post:
+      tags: [Validations]
+      summary: Create validation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateValidationRequest'
+      responses:
+        '201':
+          description: Validation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetectionValidation'
+        '409':
+          description: Validation already exists for this action
+
+  /validations/{validationId}:
+    parameters:
+      - name: validationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/UUID'
+    get:
+      tags: [Validations]
+      summary: Get validation
+      responses:
+        '200':
+          description: Validation details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetectionValidation'
+
+    patch:
+      tags: [Validations]
+      summary: Update validation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateValidationRequest'
+      responses:
+        '200':
+          description: Validation updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetectionValidation'
+
+  /validations/{validationId}/evidence:
+    post:
+      tags: [Validations]
+      summary: Upload validation evidence
+      parameters:
+        - name: validationId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceFile'
+
+  # ----------------------------------------------------------------------------
+  # Findings
+  # ----------------------------------------------------------------------------
+  /findings:
+    get:
+      tags: [Findings]
+      summary: List findings
+      parameters:
+        - name: engagementId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: pillar
+          in: query
+          schema:
+            $ref: '#/components/schemas/FindingPillar'
+        - name: category
+          in: query
+          schema:
+            $ref: '#/components/schemas/FindingCategory'
+        - name: severity
+          in: query
+          schema:
+            $ref: '#/components/schemas/FindingSeverity'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/FindingStatus'
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of findings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FindingList'
+
+    post:
+      tags: [Findings]
+      summary: Create finding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFindingRequest'
+      responses:
+        '201':
+          description: Finding created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Finding'
+
+  /findings/{findingId}:
+    parameters:
+      - name: findingId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/UUID'
+    get:
+      tags: [Findings]
+      summary: Get finding
+      responses:
+        '200':
+          description: Finding details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Finding'
+
+    patch:
+      tags: [Findings]
+      summary: Update finding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFindingRequest'
+      responses:
+        '200':
+          description: Finding updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Finding'
+
+    delete:
+      tags: [Findings]
+      summary: Delete finding
+      responses:
+        '204':
+          description: Finding deleted
+
+  # ----------------------------------------------------------------------------
+  # Reports
+  # ----------------------------------------------------------------------------
+  /reports:
+    get:
+      tags: [Reports]
+      summary: List report jobs
+      parameters:
+        - name: engagementId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ReportStatus'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of report jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportJobList'
+
+    post:
+      tags: [Reports]
+      summary: Generate report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReportRequest'
+      responses:
+        '202':
+          description: Report job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportJob'
+
+  /reports/{reportId}:
+    parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/UUID'
+    get:
+      tags: [Reports]
+      summary: Get report job status
+      responses:
+        '200':
+          description: Report job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportJob'
+
+  # ----------------------------------------------------------------------------
+  # Analytics
+  # ----------------------------------------------------------------------------
+  /analytics/dashboard:
+    get:
+      tags: [Analytics]
+      summary: Get dashboard stats
+      parameters:
+        - name: engagementId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+          description: Filter to specific engagement
+      responses:
+        '200':
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardStats'
+
+  /analytics/timing:
+    get:
+      tags: [Analytics]
+      summary: Get timing metrics
+      parameters:
+        - name: engagementId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, 90d, 1y]
+            default: 30d
+      responses:
+        '200':
+          description: Timing analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimingAnalytics'
+
+  /analytics/coverage:
+    get:
+      tags: [Analytics]
+      summary: Get coverage analytics
+      parameters:
+        - name: engagementId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Coverage analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoverageAnalytics'
+
+  /analytics/tools:
+    get:
+      tags: [Analytics]
+      summary: Get tool effectiveness
+      parameters:
+        - name: engagementId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Tool effectiveness
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolEffectiveness'
+
+  # ----------------------------------------------------------------------------
+  # Heat Map / Navigator
+  # ----------------------------------------------------------------------------
+  /engagements/{engagementId}/heatmap:
+    get:
+      tags: [Engagements]
+      summary: Get heat map data
+      parameters:
+        - name: engagementId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Heat map data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeatMapData'
+
+  /engagements/{engagementId}/navigator:
+    get:
+      tags: [Engagements]
+      summary: Export Navigator layer
+      parameters:
+        - name: engagementId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Navigator JSON layer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NavigatorLayer'
+
+  # ----------------------------------------------------------------------------
+  # Defensive Tools
+  # ----------------------------------------------------------------------------
+  /tools:
+    get:
+      tags: [Settings]
+      summary: List defensive tools
+      responses:
+        '200':
+          description: List of tools
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefensiveToolList'
+
+    post:
+      tags: [Settings]
+      summary: Create defensive tool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDefensiveToolRequest'
+      responses:
+        '201':
+          description: Tool created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefensiveTool'
+
+  /tools/{toolId}:
+    parameters:
+      - name: toolId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/UUID'
+    patch:
+      tags: [Settings]
+      summary: Update tool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDefensiveToolRequest'
+      responses:
+        '200':
+          description: Tool updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefensiveTool'
+
+    delete:
+      tags: [Settings]
+      summary: Delete tool
+      responses:
+        '204':
+          description: Tool deleted
+
+  # ----------------------------------------------------------------------------
+  # Feature Flags
+  # ----------------------------------------------------------------------------
+  /features:
+    get:
+      tags: [Settings]
+      summary: Get feature flags
+      responses:
+        '200':
+          description: Feature flag states
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureFlags'
+
+  # ----------------------------------------------------------------------------
+  # Audit Logs
+  # ----------------------------------------------------------------------------
+  /audit:
+    get:
+      tags: [Audit]
+      summary: List audit logs
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: resourceType
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            $ref: '#/components/schemas/DateTime'
+        - name: to
+          in: query
+          schema:
+            $ref: '#/components/schemas/DateTime'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogList'
+
+  /audit/export:
+    get:
+      tags: [Audit]
+      summary: Export audit logs
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/DateTime'
+        - name: to
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/DateTime'
+      responses:
+        '200':
+          description: CSV export
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  # ----------------------------------------------------------------------------
+  # Import/Export
+  # ----------------------------------------------------------------------------
+  /import:
+    post:
+      tags: [Settings]
+      summary: Import data
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - format
+                - engagementId
+              properties:
+                file:
+                  type: string
+                  format: binary
+                format:
+                  type: string
+                  enum: [csv, json, navigator, attire]
+                engagementId:
+                  $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportResult'
+
+  /export:
+    post:
+      tags: [Settings]
+      summary: Export data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+      responses:
+        '200':
+          description: Export file
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  downloadUrl:
+                    type: string
+                    format: uri
+                  expiresAt:
+                    $ref: '#/components/schemas/DateTime'
