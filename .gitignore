@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+*.log
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+
+# Lock files (optional - some teams commit these)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Prisma
+*.db
+*.db-journal
+
+# Temp files
+*.tmp
+tmp/
+temp/

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10pt; line-height: 1.5; color: #1f2937; }
+    .container { padding: 20px; }
+
+    /* Cover Page */
+    .cover { text-align: center; padding: 100px 0; }
+    .cover h1 { font-size: 32pt; color: #7c3aed; margin-bottom: 20px; }
+    .cover h2 { font-size: 20pt; color: #4b5563; margin-bottom: 40px; }
+    .cover .meta { font-size: 12pt; color: #6b7280; margin-top: 20px; }
+
+    /* Headers */
+    h1 { font-size: 22pt; color: #7c3aed; margin: 25px 0 12px; page-break-after: avoid; }
+    h2 { font-size: 16pt; color: #1f2937; margin: 20px 0 10px; page-break-after: avoid; }
+    h3 { font-size: 13pt; color: #374151; margin: 15px 0 8px; page-break-after: avoid; }
+    h4 { font-size: 11pt; color: #4b5563; margin: 12px 0 6px; page-break-after: avoid; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; page-break-inside: avoid; font-size: 9pt; }
+    th { background: #7c3aed; color: white; padding: 8px; text-align: left; font-size: 9pt; }
+    td { padding: 6px; border-bottom: 1px solid #e5e7eb; }
+    tr:nth-child(even) { background: #f9fafb; }
+
+    /* Badges */
+    .badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 8pt; font-weight: 600; }
+    .badge-CRITICAL { background: #fee; color: #dc2626; }
+    .badge-HIGH { background: #ffedd5; color: #ea580c; }
+    .badge-MEDIUM { background: #fef9c3; color: #ca8a04; }
+    .badge-LOW { background: #dbeafe; color: #2563eb; }
+    .badge-INFO, .badge-PLANNED { background: #f3f4f6; color: #6b7280; }
+    .badge-EXECUTING { background: #dbeafe; color: #2563eb; }
+    .badge-VALIDATING { background: #fef9c3; color: #ca8a04; }
+    .badge-COMPLETE { background: #d1fae5; color: #059669; }
+
+    /* Code blocks */
+    .code { background: #f3f4f6; padding: 8px; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 8pt; word-break: break-all; margin: 6px 0; }
+
+    /* Page breaks */
+    .page-break { page-break-after: always; }
+
+    /* Section box */
+    .section-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; margin: 10px 0; }
+
+    p { margin: 6px 0; font-size: 9pt; }
+    strong { color: #374151; }
+    .footer { position: fixed; bottom: 20px; left: 20px; right: 20px; text-align: center; font-size: 8pt; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+  </style>
+</head>
+<body>
+  <!-- Cover Page -->
+  <div class="cover page-break">
+    <h1>Technical Detail Report</h1>
+    <h2>{{engagement.name}}</h2>
+    <div class="meta">
+      <p>Generated: {{formatDate now}}</p>
+      <p>Methodology: {{engagement.methodology}}</p>
+      <p>Status: {{engagement.status}}</p>
+    </div>
+  </div>
+
+  <!-- Executive Summary -->
+  <div class="container">
+    <h1>Executive Summary</h1>
+    {{#if engagement.description}}
+    <p><strong>Description:</strong> {{engagement.description}}</p>
+    {{/if}}
+    <p><strong>Created by:</strong> {{engagement.createdBy.displayName}}</p>
+    {{#if engagement.startedAt}}
+    <p><strong>Started:</strong> {{formatDate engagement.startedAt}}</p>
+    {{/if}}
+    {{#if engagement.completedAt}}
+    <p><strong>Completed:</strong> {{formatDate engagement.completedAt}}</p>
+    {{/if}}
+
+    <h2>Key Metrics</h2>
+    <div class="section-box">
+      <p><strong>Techniques:</strong> {{stats.totalTechniques}} ({{round stats.completionPercent}}% complete)</p>
+      <p><strong>Actions Logged:</strong> {{stats.totalActions}}</p>
+      <p><strong>Detection Rate:</strong> {{round stats.detectionRate}}% ({{stats.validatedActions}} validated)</p>
+      <p><strong>Findings:</strong> {{stats.totalFindings}} total</p>
+      {{#if stats.avgTTD}}
+      <p><strong>Avg Time to Detect:</strong> {{formatSeconds stats.avgTTD}}</p>
+      {{/if}}
+      {{#if stats.avgTTC}}
+      <p><strong>Avg Time to Contain:</strong> {{formatSeconds stats.avgTTC}}</p>
+      {{/if}}
+    </div>
+
+    <!-- Techniques Section -->
+    <div class="page-break"></div>
+    <h1>Techniques Tested</h1>
+    {{#each techniques}}
+    <div class="section-box">
+      <h3>{{this.techniqueId}}: {{this.name}}</h3>
+      <p><strong>Status:</strong> <span class="badge badge-{{this.status}}">{{this.status}}</span></p>
+      <p><strong>Tactics:</strong> {{this.tactics}}</p>
+      {{#if this.assignedTo}}
+      <p><strong>Assigned To:</strong> {{this.assignedTo}}</p>
+      {{/if}}
+      {{#if this.notes}}
+      <p><strong>Notes:</strong> {{this.notes}}</p>
+      {{/if}}
+
+      {{#if (gt this.actions.length 0)}}
+      <h4>Actions ({{this.actions.length}})</h4>
+      <table>
+        <thead>
+          <tr>
+            <th>Executed</th>
+            <th>By</th>
+            <th>Target</th>
+            <th>Validated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each this.actions}}
+          <tr>
+            <td>{{formatDateTime this.executedAt}}</td>
+            <td>{{this.executedBy}}</td>
+            <td>{{#if this.targetHost}}{{this.targetHost}}{{else}}N/A{{/if}}</td>
+            <td>{{#if this.validation}}✓ {{this.validation.outcomes}}{{else}}Pending{{/if}}</td>
+          </tr>
+          {{#if this.command}}
+          <tr>
+            <td colspan="4">
+              <strong>Command:</strong>
+              <div class="code">{{this.command}}</div>
+            </td>
+          </tr>
+          {{/if}}
+          {{#if this.validation}}
+          {{#if this.validation.siemQuery}}
+          <tr>
+            <td colspan="4">
+              <strong>SIEM Query:</strong>
+              <div class="code">{{this.validation.siemQuery}}</div>
+            </td>
+          </tr>
+          {{/if}}
+          {{/if}}
+          {{/each}}
+        </tbody>
+      </table>
+      {{else}}
+      <p><em>No actions logged for this technique.</em></p>
+      {{/if}}
+    </div>
+    {{/each}}
+
+    <!-- Findings Section -->
+    {{#if (gt findings.length 0)}}
+    <div class="page-break"></div>
+    <h1>Findings</h1>
+    {{#each findings}}
+    <div class="section-box">
+      <h3>{{this.title}}</h3>
+      <p>
+        <span class="badge badge-{{this.severity}}">{{this.severity}}</span>
+        <span class="badge">{{this.pillar}}</span>
+        <span class="badge">{{this.category}}</span>
+        <span class="badge">{{this.status}}</span>
+      </p>
+      <p><strong>Description:</strong> {{this.description}}</p>
+      {{#if this.remediationNotes}}
+      <p><strong>Remediation:</strong> {{this.remediationNotes}}</p>
+      {{/if}}
+      {{#if this.remediationEffort}}
+      <p><strong>Effort:</strong> {{this.remediationEffort}}</p>
+      {{/if}}
+      <p><strong>Reported by:</strong> {{this.createdBy}} on {{formatDate this.createdAt}}</p>
+    </div>
+    {{/each}}
+    {{/if}}
+  </div>
+
+  <div class="footer">
+    <p>PurpleKit - Purple Team Operations Platform | Confidential</p>
+  </div>
+</body>
+</html>
