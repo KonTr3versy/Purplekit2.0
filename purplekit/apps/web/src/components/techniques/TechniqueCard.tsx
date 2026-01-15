@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Edit2,
   Trash2,
@@ -9,9 +9,11 @@ import {
   Clock,
   PlayCircle,
   AlertCircle,
+  FileText,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
+import { ActionsModal } from '../actions/ActionsModal';
 
 interface EngagementTechnique {
   id: string;
@@ -43,6 +45,7 @@ export function TechniqueCard({ engagementId, technique }: TechniqueCardProps) {
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showActionsModal, setShowActionsModal] = useState(false);
   const [editForm, setEditForm] = useState({
     status: technique.status,
     notes: technique.notes || '',
@@ -74,6 +77,18 @@ export function TechniqueCard({ engagementId, technique }: TechniqueCardProps) {
       toast.error(error.response?.data?.error?.message || 'Failed to remove technique');
     },
   });
+
+  // Fetch action count
+  const { data: actionsData } = useQuery({
+    queryKey: ['actions-count', technique.id],
+    queryFn: async () => {
+      const response = await api.get(
+        `/actions?engagementTechniqueId=${technique.id}&limit=1`
+      );
+      return response.data;
+    },
+  });
+  const actionCount = actionsData?.meta?.total || 0;
 
   const handleSave = () => {
     updateMutation.mutate({
@@ -194,6 +209,17 @@ export function TechniqueCard({ engagementId, technique }: TechniqueCardProps) {
             ))}
           </div>
 
+          {/* Actions Button */}
+          {!isEditing && (
+            <button
+              onClick={() => setShowActionsModal(true)}
+              className="text-sm text-purple-600 hover:text-purple-800 flex items-center gap-1 mb-3"
+            >
+              <FileText className="w-4 h-4" />
+              {actionCount} {actionCount === 1 ? 'Action' : 'Actions'}
+            </button>
+          )}
+
           {/* Edit Form */}
           {isEditing && (
             <div className="space-y-3 pt-3 border-t">
@@ -284,6 +310,16 @@ export function TechniqueCard({ engagementId, technique }: TechniqueCardProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Actions Modal */}
+      {showActionsModal && (
+        <ActionsModal
+          engagementId={engagementId}
+          techniqueId={technique.id}
+          technique={technique.technique}
+          onClose={() => setShowActionsModal(false)}
+        />
       )}
     </div>
   );
