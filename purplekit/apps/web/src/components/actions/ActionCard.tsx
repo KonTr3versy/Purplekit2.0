@@ -10,10 +10,13 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
+  ShieldCheck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { api } from '@/lib/api';
+import { AddValidationModal } from '../validations/AddValidationModal';
+import { ValidationDetailsCard } from '../validations/ValidationDetailsCard';
 
 interface Action {
   id: string;
@@ -34,8 +37,14 @@ interface Action {
   validation?: {
     id: string;
     actionId: string;
-    outcomes: ('LOGGED' | 'ALERTED' | 'PREVENTED' | 'NOT_LOGGED')[];
+    outcome: 'LOGGED' | 'ALERTED' | 'PREVENTED' | 'NOT_LOGGED';
+    detectedAt: string | null;
+    dataSource: string | null;
+    query: string | null;
+    alertName: string | null;
     alertPriority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO' | null;
+    falsePositive: boolean;
+    notes: string | null;
     validatedBy: {
       id: string;
       displayName: string;
@@ -54,6 +63,7 @@ export function ActionCard({ action, techniqueId }: ActionCardProps) {
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showValidationModal, setShowValidationModal] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [editForm, setEditForm] = useState({
     command: action.command || '',
@@ -154,6 +164,14 @@ export function ActionCard({ action, techniqueId }: ActionCardProps) {
                     <CheckCircle2 className="w-4 h-4 text-green-600" />
                     <span className="text-xs text-green-700 font-medium">Validated</span>
                   </div>
+                ) : !isEditing ? (
+                  <button
+                    onClick={() => setShowValidationModal(true)}
+                    className="text-xs text-purple-600 hover:text-purple-800 flex items-center gap-1 font-medium"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Validate Action
+                  </button>
                 ) : (
                   <span className="text-xs text-gray-500">Pending Validation</span>
                 )}
@@ -181,22 +199,6 @@ export function ActionCard({ action, techniqueId }: ActionCardProps) {
               </div>
             )}
           </div>
-
-          {/* Validation Outcomes */}
-          {action.validation && action.validation.outcomes.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-3">
-              {action.validation.outcomes.map((outcome) => (
-                <span
-                  key={outcome}
-                  className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getOutcomeBadgeColor(
-                    outcome
-                  )}`}
-                >
-                  {outcome}
-                </span>
-              ))}
-            </div>
-          )}
 
           {isEditing ? (
             /* Edit Form */
@@ -339,17 +341,11 @@ export function ActionCard({ action, techniqueId }: ActionCardProps) {
 
               {/* Validation Details */}
               {action.validation && (
-                <div className="pt-2 border-t">
-                  <label className="text-xs text-gray-600 font-medium">Validation Details</label>
-                  <p className="text-xs text-gray-600 mt-1">
-                    Validated by {action.validation.validatedBy.displayName} on{' '}
-                    {format(new Date(action.validation.validatedAt), 'PPp')}
-                  </p>
-                  {action.validation.alertPriority && (
-                    <p className="text-xs text-gray-600">
-                      Alert Priority: {action.validation.alertPriority}
-                    </p>
-                  )}
+                <div className="pt-3">
+                  <ValidationDetailsCard
+                    validation={action.validation}
+                    techniqueId={techniqueId}
+                  />
                 </div>
               )}
             </div>
@@ -383,6 +379,15 @@ export function ActionCard({ action, techniqueId }: ActionCardProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Add Validation Modal */}
+      {showValidationModal && (
+        <AddValidationModal
+          actionId={action.id}
+          techniqueId={techniqueId}
+          onClose={() => setShowValidationModal(false)}
+        />
       )}
     </div>
   );
