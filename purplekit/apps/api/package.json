@@ -19,6 +19,7 @@
   "dependencies": {
     "@purplekit/database": "*",
     "@purplekit/shared": "*",
+    "@types/lodash": "^4.17.23",
     "bcrypt": "^5.1.1",
     "bullmq": "^5.1.0",
     "compression": "^1.7.4",
@@ -29,6 +30,7 @@
     "helmet": "^7.1.0",
     "ioredis": "^5.3.2",
     "jsonwebtoken": "^9.0.2",
+    "lodash": "^4.17.21",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "papaparse": "^5.5.3",

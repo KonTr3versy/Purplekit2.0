@@ -14,6 +14,7 @@ import { EngagementDetailPage } from '@/pages/engagements/EngagementDetailPage';
 import { TechniquesManagementPage } from '@/pages/engagements/TechniquesManagementPage';
 import { TechniquesPage } from '@/pages/techniques/TechniquesPage';
 import { FindingsPage } from '@/pages/findings/FindingsPage';
+import { UsersPage } from '@/pages/users/UsersPage';
 import { ReportsPage } from '@/pages/reports/ReportsPage';
 import { AnalyticsPage } from '@/pages/analytics/AnalyticsPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
@@ -52,6 +53,7 @@ export function App() {
         <Route path="/engagements/:id/techniques" element={<TechniquesManagementPage />} />
         <Route path="/techniques" element={<TechniquesPage />} />
         <Route path="/findings" element={<FindingsPage />} />
+        <Route path="/users" element={<UsersPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/settings" element={<SettingsPage />} />

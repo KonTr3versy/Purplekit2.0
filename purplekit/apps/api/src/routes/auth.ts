@@ -93,6 +93,10 @@ authRouter.post('/login', async (req, res, next) => {
         email: user.email,
         displayName: user.displayName,
         role: user.role,
+        organization: {
+          name: user.organization.name,
+          subscriptionTier: user.organization.subscriptionTier,
+        },
       },
     });
   } catch (error) {
@@ -108,7 +112,11 @@ authRouter.post('/refresh', async (req, res, next) => {
     // Find session with this refresh token
     const session = await prisma.session.findUnique({
       where: { refreshToken: body.refreshToken },
-      include: { user: true },
+      include: {
+        user: {
+          include: { organization: true }
+        }
+      },
     });
 
     if (!session || session.expiresAt < new Date()) {
@@ -143,6 +151,10 @@ authRouter.post('/refresh', async (req, res, next) => {
         email: session.user.email,
         displayName: session.user.displayName,
         role: session.user.role,
+        organization: {
+          name: session.user.organization.name,
+          subscriptionTier: session.user.organization.subscriptionTier,
+        },
       },
     });
   } catch (error) {

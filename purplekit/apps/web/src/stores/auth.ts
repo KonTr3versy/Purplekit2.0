@@ -6,6 +6,10 @@ interface User {
   email: string;
   displayName: string;
   role: string;
+  organization?: {
+    name: string;
+    subscriptionTier: string;
+  };
 }
 
 interface AuthState {

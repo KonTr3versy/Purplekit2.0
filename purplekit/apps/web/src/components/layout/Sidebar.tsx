@@ -1,12 +1,13 @@
 import { Link, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  FolderKanban, 
-  Target, 
-  Search, 
+import {
+  LayoutDashboard,
+  FolderKanban,
+  Target,
+  Search,
   FileText,
   BarChart3,
   Settings,
+  Users,
   LogOut
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
@@ -21,10 +22,25 @@ const navigation = [
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
+const adminNavigation = [
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Engagements', href: '/engagements', icon: FolderKanban },
+  { name: 'Techniques', href: '/techniques', icon: Target },
+  { name: 'Findings', href: '/findings', icon: Search },
+  { name: 'Users', href: '/users', icon: Users, adminOnly: true },
+  { name: 'Reports', href: '/reports', icon: FileText },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+  { name: 'Settings', href: '/settings', icon: Settings },
+];
+
 export function Sidebar() {
   const location = useLocation();
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
+  const isAdmin = user?.role === 'ADMIN';
+
+  // Use admin navigation if user is admin, otherwise use regular navigation
+  const navItems = isAdmin ? adminNavigation : navigation;
 
   return (
     <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
@@ -36,7 +52,7 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
-          {navigation.map((item) => {
+          {navItems.map((item) => {
             const isActive = location.pathname.startsWith(item.href);
             return (
               <Link
