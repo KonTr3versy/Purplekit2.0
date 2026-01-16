@@ -12,7 +12,7 @@ import {
   generateExecutiveSummaryCSV,
   generateTechnicalDetailCSV,
 } from '../services/csv-generator';
-import { prisma } from '../lib/prisma';
+import { prisma } from '../lib/database';
 import { NotFoundError, ValidationError } from '../lib/errors';
 
 export const reportsRouter = Router();
