@@ -9,6 +9,7 @@ import { logger } from './lib/logger';
 import { errorHandler, notFoundHandler } from './middleware/error';
 import { rateLimiter } from './middleware/rate-limit';
 import { authRouter } from './routes/auth';
+import { simpleAuthRouter } from './routes/simple-auth';
 import { usersRouter } from './routes/users';
 import { engagementsRouter } from './routes/engagements';
 import { techniquesRouter } from './routes/techniques';
@@ -74,6 +75,7 @@ export function createApp(): Express {
   const v1Router = express.Router();
 
   // Auth (no authentication required)
+  v1Router.use('/simple-auth', simpleAuthRouter);  // NEW SIMPLE AUTH - USE THIS
   v1Router.use('/auth', authRouter);
 
   // Protected routes
