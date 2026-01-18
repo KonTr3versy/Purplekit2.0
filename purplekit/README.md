@@ -85,6 +85,8 @@ cp .env.example .env.local
 # Edit .env.local with your settings (defaults work for local dev)
 ```
 
+If you're running Prisma commands locally, copy `.env.example` to `.env` so the CLI can read `DATABASE_URL`.
+
 ### 4. Setup Database
 
 ```bash
