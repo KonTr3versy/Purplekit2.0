@@ -85,6 +85,8 @@ cp .env.example .env.local
 # Edit .env.local with your settings (defaults work for local dev)
 ```
 
+If you're running Prisma commands locally, copy `.env.example` to `.env` so the CLI can read `DATABASE_URL`.
+
 ### 4. Setup Database
 
 ```bash
@@ -110,6 +112,12 @@ npm run dev
 - **API Health**: http://localhost:3001/health
 
 ### Demo Credentials
+
+For local development, the API also accepts a dev-only test user (auto-provisioned on login):
+
+| Email | Role | Password | Notes |
+|-------|------|----------|-------|
+| test@purplekit.local | Admin | test1234! | Dev-only, auto-creates a demo org/user |
 
 | Email | Role | Password |
 |-------|------|----------|

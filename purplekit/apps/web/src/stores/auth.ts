@@ -17,11 +17,13 @@ interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
+  hasHydrated: boolean;
   
   // Actions
   login: (user: User, accessToken: string, refreshToken: string) => void;
   logout: () => void;
   updateTokens: (accessToken: string, refreshToken: string) => void;
+  setHasHydrated: (hasHydrated: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -31,6 +33,7 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       isAuthenticated: false,
+      hasHydrated: false,
 
       login: (user, accessToken, refreshToken) => {
         set({
@@ -53,6 +56,10 @@ export const useAuthStore = create<AuthState>()(
       updateTokens: (accessToken, refreshToken) => {
         set({ accessToken, refreshToken });
       },
+
+      setHasHydrated: (hasHydrated) => {
+        set({ hasHydrated });
+      },
     }),
     {
       name: 'purplekit-auth',
@@ -62,6 +69,9 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );
