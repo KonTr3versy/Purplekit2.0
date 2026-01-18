@@ -3,6 +3,11 @@ import { useAuthStore } from '@/stores/auth';
 
 export function AuthLayout() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
+
+  if (!hasHydrated) {
+    return null;
+  }
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
