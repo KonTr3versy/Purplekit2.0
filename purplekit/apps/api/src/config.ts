@@ -53,7 +53,17 @@ const envSchema = z.object({
   SENTRY_ENVIRONMENT: z.string().optional(),
 });
 
-const parsedEnv = envSchema.safeParse(process.env);
+const rawEnv = { ...process.env };
+const nodeEnv = rawEnv.NODE_ENV ?? 'development';
+
+if (nodeEnv !== 'production') {
+  rawEnv.DATABASE_URL ??= 'postgresql://postgres:postgres@localhost:5432/purplekit';
+  rawEnv.JWT_SECRET ??= 'dev-only-secret-change-me-please-32chars';
+  rawEnv.S3_ACCESS_KEY ??= 'dev-access-key';
+  rawEnv.S3_SECRET_KEY ??= 'dev-secret-key';
+}
+
+const parsedEnv = envSchema.safeParse(rawEnv);
 
 if (!parsedEnv.success) {
   console.error('❌ Invalid environment variables:');
