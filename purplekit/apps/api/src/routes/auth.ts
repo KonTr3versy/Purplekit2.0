@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../lib/database';
+import { prisma, setTenantContext } from '../lib/database';
 import { redis } from '../lib/redis';
 import { config } from '../config';
 import { ValidationError, UnauthorizedError } from '../middleware/error';
@@ -19,6 +19,15 @@ const loginSchema = z.object({
 const refreshSchema = z.object({
   refreshToken: z.string(),
 });
+
+interface RefreshTokenPayload {
+  sub: string;
+  orgId: string;
+  email: string;
+  role: string;
+  iat: number;
+  exp: number;
+}
 
 // Helper to generate tokens
 function generateTokens(user: { id: string; orgId: string; email: string; role: string }) {
@@ -64,6 +73,8 @@ authRouter.post('/login', async (req, res, next) => {
     // Generate tokens
     const tokens = generateTokens(user);
 
+    await setTenantContext(user.orgId);
+
     // Store refresh token in database
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
@@ -108,6 +119,15 @@ authRouter.post('/login', async (req, res, next) => {
 authRouter.post('/refresh', async (req, res, next) => {
   try {
     const body = refreshSchema.parse(req.body);
+
+    let tokenPayload: RefreshTokenPayload;
+    try {
+      tokenPayload = jwt.verify(body.refreshToken, config.jwt.secret) as RefreshTokenPayload;
+    } catch (error) {
+      throw new UnauthorizedError('Invalid or expired refresh token');
+    }
+
+    await setTenantContext(tokenPayload.orgId);
 
     // Find session with this refresh token
     const session = await prisma.session.findUnique({
