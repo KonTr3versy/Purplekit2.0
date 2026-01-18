@@ -29,6 +29,16 @@ interface RefreshTokenPayload {
   exp: number;
 }
 
+const devTestUser = {
+  email: 'test@purplekit.local',
+  password: 'test1234!',
+  displayName: 'Demo User',
+  org: {
+    name: 'Demo Organization',
+    slug: 'demo-org',
+  },
+} as const;
+
 // Helper to generate tokens
 function generateTokens(user: { id: string; orgId: string; email: string; role: string }) {
   const payload = {
@@ -55,10 +65,57 @@ authRouter.post('/login', async (req, res, next) => {
     const body = loginSchema.parse(req.body);
 
     // Find user (need to search across all orgs for login)
-    const user = await prisma.user.findFirst({
+    let user = await prisma.user.findFirst({
       where: { email: body.email, isActive: true },
       include: { organization: true },
     });
+
+    if (!user && !config.isProd && body.email === devTestUser.email && body.password === devTestUser.password) {
+      const organization = await prisma.organization.upsert({
+        where: { slug: devTestUser.org.slug },
+        update: {},
+        create: {
+          name: devTestUser.org.name,
+          slug: devTestUser.org.slug,
+        },
+      });
+
+      await setTenantContext(organization.id);
+
+      const passwordHash = await bcrypt.hash(body.password, 10);
+
+      await prisma.user.upsert({
+        where: {
+          orgId_email: {
+            orgId: organization.id,
+            email: body.email,
+          },
+        },
+        update: {
+          displayName: devTestUser.displayName,
+          role: 'ADMIN',
+          isActive: true,
+          passwordHash,
+        },
+        create: {
+          orgId: organization.id,
+          email: body.email,
+          passwordHash,
+          displayName: devTestUser.displayName,
+          role: 'ADMIN',
+        },
+      });
+
+      user = await prisma.user.findUnique({
+        where: {
+          orgId_email: {
+            orgId: organization.id,
+            email: body.email,
+          },
+        },
+        include: { organization: true },
+      });
+    }
 
     if (!user) {
       throw new UnauthorizedError('Invalid email or password');

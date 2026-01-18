@@ -111,6 +111,12 @@ npm run dev
 
 ### Demo Credentials
 
+For local development, the API also accepts a dev-only test user (auto-provisioned on login):
+
+| Email | Role | Password | Notes |
+|-------|------|----------|-------|
+| test@purplekit.local | Admin | test1234! | Dev-only, auto-creates a demo org/user |
+
 | Email | Role | Password |
 |-------|------|----------|
 | malcolm@acme.com | Red Team Lead | demo123! |
